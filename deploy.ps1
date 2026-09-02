@@ -39,13 +39,26 @@ if (-not $geminiApiKey) {
     exit 1
 }
 
+# Get FIREBASE_API_KEY
+$firebaseApiKey = $env:FIREBASE_API_KEY
+if (-not $firebaseApiKey) {
+    $secKey2 = Read-Host "Enter your FIREBASE_API_KEY" -AsSecureString
+    $bstr2 = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($secKey2)
+    $firebaseApiKey = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto($bstr2)
+}
+
+if (-not $firebaseApiKey) {
+    Write-Error "FIREBASE_API_KEY is required to deploy."
+    exit 1
+}
+
 Write-Host "Deploying to Cloud Run using Google Cloud Build..." -ForegroundColor Green
 gcloud run deploy $SERVICE_NAME `
     --project $PROJECT_ID `
     --region $REGION `
     --source . `
     --allow-unauthenticated `
-    --set-env-vars "NODE_ENV=production,GEMINI_API_KEY=$geminiApiKey"
+    --set-env-vars "NODE_ENV=production,GEMINI_API_KEY=$geminiApiKey,FIREBASE_API_KEY=$firebaseApiKey"
 
 Write-Host ""
 Write-Host "============================================================" -ForegroundColor Cyan

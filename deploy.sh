@@ -31,13 +31,24 @@ if [ -z "$GEMINI_API_KEY" ]; then
   exit 1
 fi
 
+# Prompt for FIREBASE_API_KEY if not already set
+if [ -z "$FIREBASE_API_KEY" ]; then
+  read -rsp "Enter your FIREBASE_API_KEY (input hidden): " FIREBASE_API_KEY
+  echo ""
+fi
+
+if [ -z "$FIREBASE_API_KEY" ]; then
+  echo "Error: FIREBASE_API_KEY is required to deploy."
+  exit 1
+fi
+
 echo "Deploying to Cloud Run using Google Cloud Build..."
 gcloud run deploy "$SERVICE_NAME" \
   --project "$PROJECT_ID" \
   --region "$REGION" \
   --source . \
   --allow-unauthenticated \
-  --set-env-vars "NODE_ENV=production,GEMINI_API_KEY=$GEMINI_API_KEY"
+  --set-env-vars "NODE_ENV=production,GEMINI_API_KEY=$GEMINI_API_KEY,FIREBASE_API_KEY=$FIREBASE_API_KEY"
 
 echo ""
 echo "============================================================"

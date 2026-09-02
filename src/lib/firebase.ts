@@ -2,18 +2,38 @@ import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 
+declare global {
+  interface Window {
+    __FIREBASE_CONFIG__?: {
+      apiKey?: string;
+      authDomain?: string;
+      projectId?: string;
+      storageBucket?: string;
+      messagingSenderId?: string;
+      appId?: string;
+      measurementId?: string;
+    };
+  }
+}
+
+const defaultConfig = {
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || '',
+  authDomain: 'favorable-tree-318603.firebaseapp.com',
+  projectId: 'favorable-tree-318603',
+  storageBucket: 'favorable-tree-318603.firebasestorage.app',
+  messagingSenderId: '411316001592',
+  appId: '1:411316001592:web:dd36be004a25cd74cfbfcd',
+  measurementId: 'G-Z9MT7N9SX8',
+};
+
 const firebaseConfig = {
-  projectId: "gen-lang-client-0054317751",
-  appId: "1:617141794693:web:6a022924d3fb448adfb6ec",
-  apiKey: "AIzaSyATjwwIw_5Yl0ikDbHHqHb2ojOSpHK17gQ",
-  authDomain: "gen-lang-client-0054317751.firebaseapp.com",
-  storageBucket: "gen-lang-client-0054317751.firebasestorage.app",
-  messagingSenderId: "617141794693"
+  ...defaultConfig,
+  ...(typeof window !== 'undefined' && window.__FIREBASE_CONFIG__ ? window.__FIREBASE_CONFIG__ : {}),
 };
 
 const app = initializeApp(firebaseConfig);
 
 export const auth = getAuth(app);
-export const db = getFirestore(app, "ai-studio-94cf005c-b744-42a5-ad8e-2c7356e93879");
+export const db = getFirestore(app);
 export const googleProvider = new GoogleAuthProvider();
 googleProvider.setCustomParameters({ prompt: 'select_account' });

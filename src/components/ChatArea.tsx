@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { JournalEntry, ChatMessage } from '../types';
 import { auth, db } from '../lib/firebase';
-import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { Sparkles } from 'lucide-react';
 import { cn } from '../lib/utils';
 import ReactMarkdown from 'react-markdown';
@@ -14,15 +14,20 @@ export default function ChatArea({ entry }: ChatAreaProps) {
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [messages, setMessages] = useState<ChatMessage[]>(entry.messages);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   
+  // Keep local messages in sync with entry prop
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [entry.messages, isTyping]);
+    setMessages(entry.messages);
+  }, [entry.id, entry.messages]);
 
   useEffect(() => {
-    // Instantly focus the text area when the chat window opens
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages, isTyping]);
+
+  useEffect(() => {
     inputRef.current?.focus();
     setSaveError(null);
   }, [entry.id]);
@@ -32,37 +37,47 @@ export default function ChatArea({ entry }: ChatAreaProps) {
     if (!input.trim() || !auth.currentUser) return;
     setSaveError(null);
 
+    const userText = input.trim();
     const userMessage: ChatMessage = {
       id: Date.now().toString(),
       role: 'user',
-      content: input.trim(),
+      content: userText,
       createdAt: Date.now(),
     };
 
-    const newMessages = [...entry.messages, userMessage];
-    const previewText = newMessages.filter(m => m.role === 'user').pop()?.content.substring(0, 50) + '...' || 'New reflection';
-    const isFirstMessage = entry.messages.length === 0;
-    const titleText = isFirstMessage ? userMessage.content.substring(0, 30) + '...' : entry.title;
+    // Optimistically show user message and clear typebox immediately
+    const updatedMessages = [...messages, userMessage];
+    setMessages(updatedMessages);
+    setInput('');
+    setIsTyping(true);
+
+    const previewText = updatedMessages.filter(m => m.role === 'user').pop()?.content.substring(0, 50) + '...' || 'New reflection';
+    const isFirstMessage = messages.length === 0;
+    const titleText = isFirstMessage ? userText.substring(0, 30) + '...' : entry.title;
     
     const entryRef = doc(db, 'users', auth.currentUser.uid, 'entries', entry.id);
 
-    setIsTyping(true);
-    const originalInput = input;
-
     try {
-      // Save user message immediately
-      await updateDoc(entryRef, {
-        messages: newMessages,
+      // 1. Save user message to Firestore with merge (non-blocking fallback)
+      setDoc(entryRef, {
+        messages: updatedMessages,
         preview: previewText,
         title: titleText,
         updatedAt: serverTimestamp()
+      }, { merge: true }).catch((err) => {
+        console.warn('Background Firestore write error:', err);
+        if (err?.code === 'permission-denied') {
+          setSaveError('Firestore permission denied: Please ensure your Firestore Security Rules allow authenticated users.');
+        }
       });
-      
-      // ONLY clear input after successful database write
-      setInput('');
 
-      const idToken = await auth.currentUser.getIdToken();
-      
+      // 2. Fetch fresh auth token
+      const idToken = await auth.currentUser.getIdToken(true);
+
+      // 3. Request Gemini response with a 40s timeout
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 40000);
+
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: {
@@ -70,36 +85,56 @@ export default function ChatArea({ entry }: ChatAreaProps) {
           'Authorization': `Bearer ${idToken}`
         },
         body: JSON.stringify({
-          prompt: userMessage.content,
-          history: entry.messages
-        })
+          prompt: userText,
+          history: messages
+        }),
+        signal: controller.signal
       });
 
+      clearTimeout(timeoutId);
+
       if (!response.ok) {
-        throw new Error('Failed to get AI response');
+        let errMessage = `Server returned ${response.status}`;
+        try {
+          const errData = await response.json();
+          errMessage = errData.details || errData.error || errMessage;
+        } catch {
+          // Response body was not JSON
+        }
+        throw new Error(errMessage);
       }
 
       const data = await response.json();
+      const aiText = data.text;
+      if (!aiText) {
+        throw new Error('Gemini returned an empty response. Please check your API key and quota.');
+      }
       
       const aiMessage: ChatMessage = {
         id: (Date.now() + 1).toString(),
         role: 'model',
-        content: data.text,
+        content: aiText,
         createdAt: Date.now(),
       };
 
-      const finalMessages = [...newMessages, aiMessage];
+      const finalMessages = [...updatedMessages, aiMessage];
+      setMessages(finalMessages);
       
-      // Update with AI response
-      await updateDoc(entryRef, {
+      // Update Firestore with AI response
+      await setDoc(entryRef, {
         messages: finalMessages,
         updatedAt: serverTimestamp()
+      }, { merge: true }).catch(err => {
+        console.warn('Error saving AI response to Firestore:', err);
       });
 
     } catch (error: any) {
       console.error('Chat error:', error);
-      setSaveError(error.message || 'Failed to save reflection or get AI response. Please try again.');
-      if (!input) setInput(originalInput); // restore input if it was cleared
+      const isAbort = error?.name === 'AbortError';
+      const msg = isAbort 
+        ? 'AI request timed out. Please check your network or try a shorter prompt.' 
+        : (error.message || 'Failed to get AI response. Please try again.');
+      setSaveError(msg);
     } finally {
       setIsTyping(false);
     }
@@ -108,13 +143,16 @@ export default function ChatArea({ entry }: ChatAreaProps) {
   return (
     <div className="flex-1 flex flex-col h-full bg-[#0A0A0A] relative">
       {saveError && (
-        <div className="absolute top-4 left-4 right-4 z-10 bg-red-900/50 border border-red-500 text-red-200 px-4 py-3 rounded-lg flex items-center justify-between backdrop-blur-sm">
-          <span className="text-sm font-medium">{saveError}</span>
-          <button onClick={() => setSaveError(null)} className="text-red-300 hover:text-white font-bold ml-4">✕</button>
+        <div className="absolute top-4 left-4 right-4 z-10 bg-red-900/60 border border-red-500 text-red-200 px-4 py-3 rounded-lg flex items-center justify-between backdrop-blur-sm shadow-xl">
+          <div className="flex flex-col gap-0.5">
+            <span className="text-xs font-bold text-red-100">Error:</span>
+            <span className="text-xs">{saveError}</span>
+          </div>
+          <button onClick={() => setSaveError(null)} className="text-red-300 hover:text-white font-bold ml-4 p-1">✕</button>
         </div>
       )}
       <div className="flex-1 overflow-y-auto p-4 md:p-12 space-y-8 pb-40">
-        {entry.messages.length === 0 ? (
+        {messages.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-center max-w-lg mx-auto space-y-4 opacity-50">
             <Sparkles className="w-12 h-12 text-[#444]" />
             <h3 className="text-xl font-serif text-[#C5A059] italic">Blank Page</h3>
@@ -124,7 +162,7 @@ export default function ChatArea({ entry }: ChatAreaProps) {
           </div>
         ) : (
           <div className="max-w-2xl mx-auto space-y-12">
-            {entry.messages.map((msg) => (
+            {messages.map((msg) => (
               <div 
                 key={msg.id} 
                 className="w-full"

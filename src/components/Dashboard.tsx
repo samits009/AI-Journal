@@ -32,6 +32,8 @@ export default function Dashboard() {
         } as JournalEntry;
       });
       setEntries(fetched);
+    }, (error) => {
+      console.error("Firestore onSnapshot error:", error);
     });
     return () => unsubscribe();
   }, [user]);

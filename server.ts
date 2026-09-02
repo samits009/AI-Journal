@@ -58,10 +58,11 @@ app.get('/api/health', (req, res) => {
 let ai: GoogleGenAI | null = null;
 function getGenAI() {
   if (!ai) {
-    if (!process.env.GEMINI_API_KEY) {
-      throw new Error('GEMINI_API_KEY environment variable is required');
+    const key = process.env.GEMINI_API_KEY ? process.env.GEMINI_API_KEY.trim() : '';
+    if (!key) {
+      throw new Error('GEMINI_API_KEY environment variable is not configured on Cloud Run.');
     }
-    ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+    ai = new GoogleGenAI({ apiKey: key });
   }
   return ai;
 }
@@ -82,9 +83,12 @@ async function verifyUser(req: express.Request, res: express.Response, next: exp
     const decodedToken = await getAuth().verifyIdToken(idToken);
     (req as any).user = decodedToken;
     next();
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error verifying Firebase token:', error);
-    res.status(401).json({ error: 'Unauthorized: Token verification failed' });
+    res.status(401).json({ 
+      error: 'Unauthorized: Token verification failed', 
+      details: error.message || 'Token could not be verified'
+    });
   }
 }
 
@@ -95,20 +99,25 @@ app.post('/api/chat', verifyUser, async (req, res) => {
     const { history, prompt } = req.body;
     
     // Validate request
-    if (!prompt) {
-       res.status(400).json({ error: 'Missing prompt' });
+    if (!prompt || typeof prompt !== 'string' || prompt.trim().length === 0) {
+       res.status(400).json({ error: 'Missing or invalid prompt' });
        return;
     }
 
-    let rawContents = [];
+    let rawContents: { role: string; text: string }[] = [];
     if (history && Array.isArray(history)) {
       for (const msg of history) {
-        if (msg.role && msg.content) {
-          rawContents.push({ role: msg.role === 'user' ? 'user' : 'model', text: msg.content });
+        if (msg.role && msg.content && typeof msg.content === 'string' && msg.content.trim()) {
+          rawContents.push({ role: msg.role === 'user' ? 'user' : 'model', text: msg.content.trim() });
         }
       }
     }
-    rawContents.push({ role: 'user', text: prompt });
+    rawContents.push({ role: 'user', text: prompt.trim() });
+
+    // Ensure history does not start with model turn
+    while (rawContents.length > 0 && rawContents[0].role === 'model') {
+      rawContents.shift();
+    }
 
     // Combine consecutive turns of the same role
     const contents: any[] = [];
@@ -120,24 +129,25 @@ app.post('/api/chat', verifyUser, async (req, res) => {
       }
     }
 
+    if (contents.length === 0 || contents[0].role !== 'user') {
+      contents.unshift({ role: 'user', parts: [{ text: prompt.trim() }] });
+    }
+
     const systemInstruction = 'You are a compassionate, thoughtful journaling assistant. Your role is to help the user reflect, summarize their entries, and brainstorm ideas based on their journal entries. Keep your tone supportive, concise, and insightful. The user may write single or multi-turn entries.';
 
     const models = [
-      'gemini-2.5-flash',
       'gemini-2.0-flash',
       'gemini-1.5-flash',
-      'gemini-2.5-pro',
-      'gemini-3.7-flash',
-      'gemini-flash-latest',
-      'gemini-3.6-flash',
-      'gemini-3.1-flash-lite'
+      'gemini-2.5-flash',
+      'gemini-1.5-pro'
     ];
 
-    let response;
-    let lastError;
+    let response: any = null;
+    let lastError: any = null;
 
     for (const model of models) {
       try {
+        console.log(`Generating reflection using model ${model}...`);
         response = await aiClient.models.generateContent({
           model,
           contents,
@@ -146,7 +156,10 @@ app.post('/api/chat', verifyUser, async (req, res) => {
             temperature: 0.7,
           }
         });
-        break; // Success, exit loop
+        const text = response?.text || response?.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (text) {
+          break; // Success, exit loop
+        }
       } catch (err: any) {
         lastError = err;
         console.warn(`Model ${model} failed, falling back... Error: ${err.message}`);
@@ -160,14 +173,16 @@ app.post('/api/chat', verifyUser, async (req, res) => {
       }
     }
 
-    if (!response) {
+    const responseText = response?.text || response?.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!responseText) {
       throw lastError || new Error('All models failed to generate a response');
     }
 
-    res.json({ text: response.text });
+    res.json({ text: responseText });
   } catch (error: any) {
     console.error('Gemini API Error:', error);
-    res.status(500).json({ error: 'Failed to generate response', details: error.message });
+    const details = error.details || error.message || 'Unknown error occurred';
+    res.status(500).json({ error: 'Failed to generate response', details });
   }
 });
 

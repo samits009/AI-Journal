@@ -1,0 +1,6 @@
+{
+  "name": "AI Journal",
+  "description": "A private, AI-powered journaling application where you can write reflections and chat with Gemini.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -5,40 +5,91 @@ import fs from 'fs';
 import { GoogleGenAI } from '@google/genai';
 import admin from 'firebase-admin';
 import { getAuth } from 'firebase-admin/auth';
+import { SecretManagerServiceClient } from '@google-cloud/secret-manager';
 
+// ─────────────────────────────────────────────
+// Project configuration
+// ─────────────────────────────────────────────
 let projectId = 'favorable-tree-318603';
 try {
   const configPath = path.join(process.cwd(), 'firebase-applet-config.json');
   if (fs.existsSync(configPath)) {
     const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-    if (config.projectId) {
-      projectId = config.projectId;
-    }
+    if (config.projectId) projectId = config.projectId;
   }
 } catch (e) {
   console.warn('Could not read firebase config', e);
 }
-
-// Allow explicit override if specified in environment
 if (process.env.FIREBASE_PROJECT_ID) {
   projectId = process.env.FIREBASE_PROJECT_ID;
 }
 
-// Initialize Firebase Admin (uses application default credentials)
-admin.initializeApp({
-  projectId,
-});
+// ─────────────────────────────────────────────
+// Secret Manager: fetch a secret value
+// In production (Cloud Run), uses Application Default Credentials.
+// In development, falls back to environment variables.
+// ─────────────────────────────────────────────
+const secretClient = new SecretManagerServiceClient();
+
+async function getSecretValue(secretName: string, envFallback: string | undefined): Promise<string> {
+  // Always prefer env var (injected by Cloud Run --set-secrets or local .env)
+  if (envFallback && envFallback.trim()) {
+    return envFallback.trim();
+  }
+  // Fallback: fetch directly from Secret Manager via API
+  if (process.env.NODE_ENV === 'production') {
+    try {
+      const name = `projects/${projectId}/secrets/${secretName}/versions/latest`;
+      const [version] = await secretClient.accessSecretVersion({ name });
+      const payload = version.payload?.data?.toString() || '';
+      if (payload) {
+        console.log(`[SecretManager] Loaded secret: ${secretName}`);
+        return payload.trim();
+      }
+    } catch (err: any) {
+      console.error(`[SecretManager] Could not fetch secret "${secretName}":`, err.message);
+    }
+  }
+  return '';
+}
+
+// ─────────────────────────────────────────────
+// Resolved secrets (populated at startup)
+// ─────────────────────────────────────────────
+let resolvedGeminiKey = '';
+let resolvedFirebaseKey = '';
+
+async function resolveSecrets() {
+  resolvedGeminiKey = await getSecretValue('gemini-api-key', process.env.GEMINI_API_KEY);
+  resolvedFirebaseKey = await getSecretValue('firebase-api-key', process.env.FIREBASE_API_KEY || process.env.VITE_FIREBASE_API_KEY);
+
+  if (!resolvedGeminiKey) {
+    console.error('[SecretManager] WARNING: GEMINI_API_KEY could not be resolved. AI chat will not work.');
+  } else {
+    console.log('[SecretManager] GEMINI_API_KEY resolved successfully.');
+  }
+  if (!resolvedFirebaseKey) {
+    console.warn('[SecretManager] WARNING: FIREBASE_API_KEY could not be resolved. Client auth may fail.');
+  } else {
+    console.log('[SecretManager] FIREBASE_API_KEY resolved successfully.');
+  }
+}
+
+// ─────────────────────────────────────────────
+// Initialize Firebase Admin (Application Default Credentials on Cloud Run)
+// ─────────────────────────────────────────────
+admin.initializeApp({ projectId });
 
 const app = express();
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 8080;
 
 app.use(express.json());
 
-// Serve dynamic Firebase client config from environment variables
+// Serve dynamic Firebase client config — uses the resolved key from Secret Manager
 app.get('/api/firebase-config.js', (req, res) => {
   res.setHeader('Content-Type', 'application/javascript');
   const clientConfig = {
-    apiKey: process.env.FIREBASE_API_KEY || process.env.VITE_FIREBASE_API_KEY || '',
+    apiKey: resolvedFirebaseKey || '',
     authDomain: process.env.FIREBASE_AUTH_DOMAIN || `${projectId}.firebaseapp.com`,
     projectId: projectId,
     storageBucket: process.env.FIREBASE_STORAGE_BUCKET || `${projectId}.firebasestorage.app`,
@@ -49,23 +100,34 @@ app.get('/api/firebase-config.js', (req, res) => {
   res.send(`window.__FIREBASE_CONFIG__ = ${JSON.stringify(clientConfig)};`);
 });
 
-// API route
+// Health check
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok' });
+  res.json({ 
+    status: 'ok',
+    features: {
+      firebaseAuth: true,
+      multiTurnGemini: true,
+      firestoreIsolation: true,
+      secretManager: !!resolvedGeminiKey && !!resolvedFirebaseKey,
+    }
+  });
 });
 
-// Initialize Gemini
+// ─────────────────────────────────────────────
+// Initialize Gemini using the resolved key
+// ─────────────────────────────────────────────
 let ai: GoogleGenAI | null = null;
 function getGenAI() {
   if (!ai) {
-    const key = process.env.GEMINI_API_KEY ? process.env.GEMINI_API_KEY.trim() : '';
+    const key = resolvedGeminiKey;
     if (!key) {
-      throw new Error('GEMINI_API_KEY environment variable is not configured on Cloud Run.');
+      throw new Error('GEMINI_API_KEY is not available. Check Secret Manager or environment variables.');
     }
     ai = new GoogleGenAI({ apiKey: key });
   }
   return ai;
 }
+
 
 // Ensure the token is valid
 async function verifyUser(req: express.Request, res: express.Response, next: express.NextFunction) {
@@ -205,6 +267,10 @@ app.use('/api', (req, res) => {
 });
 
 async function startServer() {
+  // ── 1. Resolve all secrets from Secret Manager (or env fallback) ──
+  await resolveSecrets();
+
+  // ── 2. Set up static file serving / Vite dev middleware ──
   if (process.env.NODE_ENV !== 'production') {
     const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
@@ -220,8 +286,10 @@ async function startServer() {
     });
   }
 
+  // ── 3. Start listening ──
   const server = app.listen(PORT, '0.0.0.0', () => {
     console.log(`Server running on port ${PORT}`);
+    console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
   });
 
   const shutdown = (signal: string) => {

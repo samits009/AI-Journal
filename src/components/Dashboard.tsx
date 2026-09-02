@@ -138,7 +138,7 @@ export default function Dashboard() {
 
         <main className="flex-1 overflow-hidden relative flex flex-col">
           {activeEntry ? (
-            <ChatArea entry={activeEntry} />
+            <ChatArea key={activeEntry.id} entry={activeEntry} />
           ) : (
             <div className="flex-1 flex flex-col items-center justify-center text-center p-8 space-y-4">
               <div className="w-16 h-16 bg-[#161616] border border-[#262626] rounded-2xl flex items-center justify-center mb-2 shadow-lg">

@@ -2,12 +2,11 @@ import 'dotenv/config';
 import express from 'express';
 import path from 'path';
 import fs from 'fs';
-import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI } from '@google/genai';
 import admin from 'firebase-admin';
 import { getAuth } from 'firebase-admin/auth';
 
-let projectId = process.env.FIREBASE_PROJECT_ID || process.env.GOOGLE_CLOUD_PROJECT || 'gen-lang-client-0054317751';
+let projectId = 'gen-lang-client-0054317751';
 try {
   const configPath = path.join(process.cwd(), 'firebase-applet-config.json');
   if (fs.existsSync(configPath)) {
@@ -18,6 +17,11 @@ try {
   }
 } catch (e) {
   console.warn('Could not read firebase config', e);
+}
+
+// Allow explicit override if specified in environment
+if (process.env.FIREBASE_PROJECT_ID) {
+  projectId = process.env.FIREBASE_PROJECT_ID;
 }
 
 // Initialize Firebase Admin (uses application default credentials)
@@ -104,10 +108,14 @@ app.post('/api/chat', verifyUser, async (req, res) => {
     const systemInstruction = 'You are a compassionate, thoughtful journaling assistant. Your role is to help the user reflect, summarize their entries, and brainstorm ideas based on their journal entries. Keep your tone supportive, concise, and insightful. The user may write single or multi-turn entries.';
 
     const models = [
-      'gemini-3.6-flash',
-      'gemini-3.1-flash-lite',
+      'gemini-2.5-flash',
+      'gemini-2.0-flash',
+      'gemini-1.5-flash',
+      'gemini-2.5-pro',
+      'gemini-3.7-flash',
       'gemini-flash-latest',
-      'gemini-3.7-flash'
+      'gemini-3.6-flash',
+      'gemini-3.1-flash-lite'
     ];
 
     let response;
@@ -165,6 +173,7 @@ app.use('/api', (req, res) => {
 
 async function startServer() {
   if (process.env.NODE_ENV !== 'production') {
+    const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',

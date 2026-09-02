@@ -9,7 +9,7 @@ import { LogIn } from 'lucide-react';
 import Dashboard from './components/Dashboard';
 
 function LandingPage() {
-  const { signInWithGoogle } = useAuth();
+  const { signInWithGoogle, authError, clearAuthError } = useAuth();
   
   return (
     <div className="min-h-screen bg-[#0A0A0A] flex flex-col items-center justify-center p-4">
@@ -20,6 +20,13 @@ function LandingPage() {
             Reflect, brainstorm, and converse with your AI companion in a private, secure space.
           </p>
         </div>
+
+        {authError && (
+          <div className="bg-red-950/60 border border-red-500/50 text-red-200 text-xs p-3 rounded-lg text-left flex items-start justify-between gap-2">
+            <span>{authError}</span>
+            <button onClick={clearAuthError} className="text-red-400 hover:text-white font-bold ml-1">✕</button>
+          </div>
+        )}
         
         <button 
           onClick={signInWithGoogle}

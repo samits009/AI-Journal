@@ -6,8 +6,10 @@ import { onAuthStateChanged, signInWithPopup, signOut } from 'firebase/auth';
 interface AuthContextType {
   user: User | null;
   loading: boolean;
+  authError: string | null;
   signInWithGoogle: () => Promise<void>;
   logout: () => Promise<void>;
+  clearAuthError: () => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -15,6 +17,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [authError, setAuthError] = useState<string | null>(null);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
@@ -35,10 +38,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const signInWithGoogle = async () => {
+    setAuthError(null);
     try {
       await signInWithPopup(auth, googleProvider);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error signing in with Google:", error);
+      const code = error?.code || '';
+      if (code === 'auth/unauthorized-domain') {
+        setAuthError('Unauthorized Domain: The current domain is not added to Firebase Authorized Domains.');
+      } else if (code === 'auth/popup-blocked') {
+        setAuthError('Popup blocked by browser. Please allow popups for this site.');
+      } else if (code === 'auth/popup-closed-by-user') {
+        // user cancelled popup, no need for scary alert
+      } else {
+        setAuthError(error.message || 'Failed to sign in with Google.');
+      }
     }
   };
 
@@ -50,8 +64,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const clearAuthError = () => setAuthError(null);
+
   return (
-    <AuthContext.Provider value={{ user, loading, signInWithGoogle, logout }}>
+    <AuthContext.Provider value={{ user, loading, authError, signInWithGoogle, logout, clearAuthError }}>
       {children}
     </AuthContext.Provider>
   );

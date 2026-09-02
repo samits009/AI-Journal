@@ -197,14 +197,12 @@ app.post('/api/chat', verifyUser, async (req, res) => {
 
     const systemInstruction = 'You are a compassionate, thoughtful journaling assistant. Your role is to help the user reflect, summarize their entries, and brainstorm ideas based on their journal entries. Keep your tone supportive, concise, and insightful. The user may write single or multi-turn entries.';
 
-    const primaryModel = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
+    const primaryModel = process.env.GEMINI_MODEL || 'gemini-3.6-flash';
     const models = Array.from(new Set([
       primaryModel,
-      'gemini-2.0-flash',
-      'gemini-1.5-flash',
-      'gemini-2.5-flash',
       'gemini-3.6-flash',
-      'gemini-1.5-pro'
+      'gemini-flash-latest',
+      'gemini-3.1-flash-lite'
     ]));
 
     let response: any = null;

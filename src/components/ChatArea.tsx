@@ -45,6 +45,9 @@ export default function ChatArea({ entry }: ChatAreaProps) {
       createdAt: Date.now(),
     };
 
+    // Capture history BEFORE adding new user message (avoids duplicate in server call)
+    const historyBeforeThisTurn = [...messages];
+
     // Optimistically show user message and clear typebox immediately
     const updatedMessages = [...messages, userMessage];
     setMessages(updatedMessages);
@@ -86,7 +89,7 @@ export default function ChatArea({ entry }: ChatAreaProps) {
         },
         body: JSON.stringify({
           prompt: userText,
-          history: messages
+          history: historyBeforeThisTurn
         }),
         signal: controller.signal
       });
@@ -221,11 +224,11 @@ export default function ChatArea({ entry }: ChatAreaProps) {
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
                   e.preventDefault();
-                  handleSubmit(e);
+                  (e.currentTarget.form as HTMLFormElement)?.requestSubmit();
                 }
               }}
               placeholder="Deepen the reflection..."
-              className="w-full bg-[#1A1A1A] border border-[#333] rounded-xl p-4 pr-32 text-sm text-[#E5E5E5] focus:outline-none focus:border-[#C5A059] resize-none h-24 placeholder:text-[#444] scrollbar-thin transition-colors"
+              className={`w-full bg-[#1A1A1A] border rounded-xl p-4 pr-32 text-sm text-[#E5E5E5] focus:outline-none resize-none h-24 placeholder:text-[#444] scrollbar-thin transition-colors ${isTyping ? 'border-[#C5A059]/30 opacity-60 cursor-not-allowed' : 'border-[#333] focus:border-[#C5A059]'}`}
               disabled={isTyping}
             />
             <div className="absolute right-3 bottom-3 flex gap-2">

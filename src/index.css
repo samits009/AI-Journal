@@ -14,6 +14,9 @@ body {
   .markdown-body strong {
     @apply font-medium text-[#E5E5E5];
   }
+  .markdown-body em {
+    @apply italic text-[#C5A059]/80;
+  }
   .markdown-body ul {
     @apply list-disc list-outside ml-5 mb-4;
   }
@@ -29,5 +32,23 @@ body {
   .markdown-body h1 { @apply text-xl; }
   .markdown-body h2 { @apply text-lg; }
   .markdown-body h3 { @apply text-base; }
+  .markdown-body code {
+    @apply bg-[#222] text-[#C5A059] px-1.5 py-0.5 rounded text-xs font-mono;
+  }
+  .markdown-body pre {
+    @apply bg-[#1A1A1A] border border-[#333] rounded-lg p-4 mb-4 overflow-x-auto;
+  }
+  .markdown-body pre code {
+    @apply bg-transparent p-0 text-[#E5E5E5] text-xs;
+  }
+  .markdown-body blockquote {
+    @apply border-l-2 border-[#C5A059]/40 pl-4 italic text-[#888] mb-4;
+  }
+  .markdown-body a {
+    @apply text-[#C5A059] underline underline-offset-2 hover:text-[#D5B069];
+  }
+  .markdown-body hr {
+    @apply border-[#333] my-6;
+  }
 }
 

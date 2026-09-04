@@ -3,6 +3,17 @@ import { JournalEntry, User } from '../types';
 import { format } from 'date-fns';
 import { Plus, LogOut, Trash2 } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { getMoodEmoji } from './MoodInsights';
+
+const MOOD_FILTERS = [
+  { value: 'all', label: 'All' },
+  { value: 'joyful', label: '😊', title: 'Joyful' },
+  { value: 'calm', label: '😌', title: 'Calm' },
+  { value: 'reflective', label: '🤔', title: 'Reflective' },
+  { value: 'anxious', label: '😰', title: 'Anxious' },
+  { value: 'sad', label: '😢', title: 'Sad' },
+  { value: 'energized', label: '⚡', title: 'Energized' },
+];
 
 interface SidebarProps {
   entries: JournalEntry[];
@@ -12,9 +23,15 @@ interface SidebarProps {
   onCreateNew: () => void;
   user: User;
   onLogout: () => void;
+  moodFilter: string;
+  onMoodFilterChange: (mood: string) => void;
 }
 
-export default function Sidebar({ entries, activeEntryId, onSelectEntry, onDeleteEntry, onCreateNew, user, onLogout }: SidebarProps) {
+export default function Sidebar({ entries, activeEntryId, onSelectEntry, onDeleteEntry, onCreateNew, user, onLogout, moodFilter, onMoodFilterChange }: SidebarProps) {
+  const filteredEntries = moodFilter === 'all'
+    ? entries
+    : entries.filter(e => e.mood === moodFilter);
+
   return (
     <div className="flex flex-col h-full">
       <div className="p-6 border-b border-[#262626] shrink-0">
@@ -34,13 +51,35 @@ export default function Sidebar({ entries, activeEntryId, onSelectEntry, onDelet
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-1 scrollbar-thin">
-        <h2 className="text-[10px] uppercase tracking-[0.2em] text-[#666] mb-4 px-2 mt-2">Recent History</h2>
-        {entries.length === 0 ? (
+        <h2 className="text-[10px] uppercase tracking-[0.2em] text-[#666] mb-3 px-2 mt-2">Recent History</h2>
+        
+        {/* Mood Filter Chips */}
+        <div className="flex flex-wrap gap-1 px-2 mb-4">
+          {MOOD_FILTERS.map(f => (
+            <button
+              key={f.value}
+              onClick={() => onMoodFilterChange(f.value)}
+              title={f.title || f.label}
+              className={cn(
+                "px-2 py-1 rounded-full text-[10px] transition-all border",
+                moodFilter === f.value
+                  ? "bg-[#C5A059]/20 border-[#C5A059]/50 text-[#C5A059]"
+                  : "bg-[#1A1A1A] border-[#262626] text-[#666] hover:border-[#444] hover:text-[#999]"
+              )}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
+
+        {filteredEntries.length === 0 ? (
           <div className="text-center py-8 px-4 text-xs text-[#555]">
-            No entries yet. Start writing your first reflection!
+            {moodFilter === 'all' 
+              ? 'No entries yet. Start writing your first reflection!' 
+              : `No ${moodFilter} entries found.`}
           </div>
         ) : (
-          entries.map(entry => (
+          filteredEntries.map(entry => (
             <div
               key={entry.id}
               className={cn(
@@ -54,10 +93,17 @@ export default function Sidebar({ entries, activeEntryId, onSelectEntry, onDelet
                 onClick={() => onSelectEntry(entry.id)}
                 className="flex-1 text-left min-w-0"
               >
-                <p className={cn(
-                  "text-sm font-serif truncate",
-                  activeEntryId === entry.id ? "text-[#E5E5E5]" : "text-[#A1A1A1] group-hover:text-[#E5E5E5]"
-                )}>{entry.title}</p>
+                <div className="flex items-center gap-1.5">
+                  {entry.mood && (
+                    <span className="text-xs shrink-0" title={entry.mood}>
+                      {getMoodEmoji(entry.mood)}
+                    </span>
+                  )}
+                  <p className={cn(
+                    "text-sm font-serif truncate",
+                    activeEntryId === entry.id ? "text-[#E5E5E5]" : "text-[#A1A1A1] group-hover:text-[#E5E5E5]"
+                  )}>{entry.title}</p>
+                </div>
                 <p className="text-[10px] text-[#666] mt-1">
                   {format(entry.updatedAt, 'MMM d • h:mm a')}
                 </p>

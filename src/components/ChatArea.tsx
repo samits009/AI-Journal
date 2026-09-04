@@ -5,6 +5,7 @@ import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { Sparkles } from 'lucide-react';
 import { cn } from '../lib/utils';
 import ReactMarkdown from 'react-markdown';
+import { getMoodConfig } from './MoodInsights';
 
 interface ChatAreaProps {
   entry: JournalEntry;
@@ -159,6 +160,34 @@ export default function ChatArea({ entry }: ChatAreaProps) {
         console.warn('Error saving AI response to Firestore:', err);
       });
 
+      // Background: Analyze mood of the user's journal text using Gemini
+      (async () => {
+        try {
+          const moodToken = await auth.currentUser?.getIdToken();
+          if (!moodToken) return;
+          const moodRes = await fetch('/api/analyze-mood', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${moodToken}`
+            },
+            body: JSON.stringify({ text: userText })
+          });
+          if (moodRes.ok) {
+            const moodData = await moodRes.json();
+            if (moodData.mood) {
+              setDoc(entryRef, {
+                mood: moodData.mood,
+                moodSummary: moodData.summary || '',
+                updatedAt: serverTimestamp()
+              }, { merge: true }).catch(() => {});
+            }
+          }
+        } catch (moodErr) {
+          console.warn('Background mood analysis failed:', moodErr);
+        }
+      })();
+
     } catch (error: any) {
       console.error('Chat error:', error);
       if (isMountedRef.current) {
@@ -179,8 +208,24 @@ export default function ChatArea({ entry }: ChatAreaProps) {
     }
   };
 
+  const moodConfig = getMoodConfig(entry.mood);
+
   return (
     <div className="flex-1 flex flex-col h-full bg-[#0A0A0A] relative">
+      {/* Mood Badge */}
+      {moodConfig && (
+        <div className="absolute top-4 right-4 z-10 flex items-center gap-2 bg-[#161616] border border-[#262626] rounded-full px-3 py-1.5 shadow-lg">
+          <span className="text-sm">{moodConfig.emoji}</span>
+          <span className="text-[10px] uppercase tracking-widest font-medium" style={{ color: moodConfig.color }}>
+            {moodConfig.label}
+          </span>
+          {entry.moodSummary && (
+            <span className="text-[9px] text-[#666] max-w-[150px] truncate hidden md:inline">
+              — {entry.moodSummary}
+            </span>
+          )}
+        </div>
+      )}
       {saveError && (
         <div className="absolute top-4 left-4 right-4 z-10 bg-red-900/60 border border-red-500 text-red-200 px-4 py-3 rounded-lg flex items-center justify-between backdrop-blur-sm shadow-xl">
           <div className="flex flex-col gap-0.5">

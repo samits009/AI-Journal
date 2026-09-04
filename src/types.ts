@@ -18,6 +18,8 @@ export interface JournalEntry {
   title: string;
   preview: string;
   messages: ChatMessage[];
+  mood?: string;
+  moodSummary?: string;
   createdAt: number;
   updatedAt: number;
 }

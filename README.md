@@ -14,10 +14,11 @@
 AI Journal empowers users to document daily reflections, track mood trends, and engage in meaningful, context-aware conversations with Google's Gemini AI. Each journal entry maintains its own dedicated chat stream where Gemini acts as an empathetic, constructive companion.
 
 - 🔒 **End-to-End User Isolation & Privacy**: Every entry and conversation is strictly partitioned per user in Cloud Firestore using authenticated user IDs (`userId`).
-- 🤖 **Multi-Turn Contextual AI Conversations**: Gemini has full context of the active journal entry (title, content, tags, mood, and past dialogue) to provide thoughtful guidance.
+- 🤖 **Multi-Turn Contextual AI Conversations**: Gemini has full context of the active journal entry and past dialogue to provide thoughtful guidance.
 - 🛡️ **Enterprise-Grade Secret Management**: API keys (`GEMINI_API_KEY`, `FIREBASE_API_KEY`) are fetched dynamically from **Google Cloud Secret Manager** or injected via Cloud Run `--set-secrets`.
 - ⚡ **Realtime Cloud Firestore Synchronization**: Instant synchronization of entries, reflections, and chat streams across devices.
-- 🎨 **Modern, Responsive UI**: Built with React 19, Tailwind CSS, Lucide icons, and Motion for fluid interactions, dark theme aesthetics, and seamless responsiveness.
+- 🧠 **AI-Powered Mood Analytics** *(Phase 3 Enhancement)*: Gemini automatically classifies the emotional tone of each journal entry, displays mood badges, allows mood filtering, and renders a visual Mood Insights timeline.
+- 🎨 **Modern, Responsive UI**: Built with React 19, Tailwind CSS, Lucide icons, and dark theme aesthetics with seamless responsiveness.
 
 ---
 
@@ -25,27 +26,30 @@ AI Journal empowers users to document daily reflections, track mood trends, and 
 
 ```
 AI-Journal/
-├── src/                          # Frontend Application (React 19 + TypeScript + Vite)
+├── AI_STUDIO_CUSTOM_INSTRUCTIONS.md  # Phase 1: AI Studio security directives
+├── src/                              # Frontend Application (React 19 + TypeScript + Vite)
 │   ├── components/
-│   │   ├── Auth.tsx              # Firebase Google Auth & Email login/signup
-│   │   ├── ChatArea.tsx          # Multi-turn Gemini AI chat interface
-│   │   ├── Dashboard.tsx         # Sidebar, entry list, mood filters, search
-│   │   ├── EntryEditor.tsx       # Rich journal editor (content, tags, mood)
-│   │   └── Navbar.tsx            # Header, user profile, sign out
-│   ├── services/
-│   │   └── firebase.ts           # Firebase client initialization & auth listener
-│   ├── types.ts                  # Shared TypeScript interfaces (JournalEntry, Message)
-│   ├── App.tsx                   # Main app component & state management
-│   ├── main.tsx                  # React entry point
-│   └── index.css                 # Tailwind CSS styles
-├── server.ts                     # Backend Server (Express + Google GenAI + Secret Manager)
-├── firestore.rules               # Cloud Firestore Security Rules
-├── Dockerfile                    # Multi-stage production container build
-├── deploy.ps1                    # Automated deployment script for Windows PowerShell
-├── deploy.sh                     # Automated deployment script for Linux / macOS / Cloud Shell
-├── package.json                  # Dependencies & build scripts
-├── vite.config.ts                # Vite configuration & server proxy
-└── tsconfig.json                 # TypeScript compiler configuration
+│   │   ├── ChatArea.tsx              # Multi-turn Gemini AI chat + mood badge
+│   │   ├── Dashboard.tsx             # Layout, entry list, mood filter state
+│   │   ├── MoodInsights.tsx          # Phase 3: Mood timeline, distribution, streaks
+│   │   └── Sidebar.tsx               # Entry list, mood emoji badges, mood filter chips
+│   ├── contexts/
+│   │   └── AuthContext.tsx           # Firebase Auth provider & Google Sign-In
+│   ├── lib/
+│   │   ├── firebase.ts               # Firebase client initialization & auth
+│   │   └── utils.ts                  # Utility functions (cn)
+│   ├── types.ts                      # TypeScript interfaces (JournalEntry, ChatMessage)
+│   ├── App.tsx                       # Main app component & routing
+│   ├── main.tsx                      # React entry point
+│   └── index.css                     # Tailwind CSS styles
+├── server.ts                         # Backend (Express + GenAI + Secret Manager + Mood API)
+├── firestore.rules                   # Cloud Firestore Security Rules
+├── Dockerfile                        # Multi-stage production container build
+├── deploy.ps1                        # Automated deployment (Windows PowerShell)
+├── deploy.sh                         # Automated deployment (Linux / macOS / Cloud Shell)
+├── package.json                      # Dependencies & build scripts
+├── vite.config.ts                    # Vite configuration
+└── tsconfig.json                     # TypeScript compiler configuration
 ```
 
 ---
@@ -244,4 +248,49 @@ npm start
 - [x] **Verification Label**: `dev-tutorial=cloud-run-ai-challenge` configured on Cloud Run service and scripted in `deploy.ps1` and `deploy.sh`.
 - [x] **Public Git Repository**: Frontend + backend source code included.
 - [x] **`README.md`**: Complete architectural overview, step-by-step deployment guide, and local development instructions.
-- [x] **Firestore Security Rules**: Documented in `README.md` and included in [`firestore.rules`](file:///firestore.rules).
+- [x] **Firestore Security Rules**: Documented in `README.md` and included in [`firestore.rules`](firestore.rules).
+
+---
+
+## 🛡️ Phase 1: AI Studio Custom Security Directives
+
+Before building the application, Google AI Studio was configured with enterprise-grade **Custom Instructions** that act as a "constitution" for all generated code. These directives cover:
+
+1. **Threat Modeling** — OWASP Top 10 compliance, input sanitization, XSS prevention
+2. **Secure Coding Standards** — No hardcoded secrets, TypeScript strict mode, payload limits
+3. **Database Isolation Rules** — Firestore rules enforce `auth.uid == userId`, no cross-user reads
+4. **Secret Management** — Google Cloud Secret Manager, never `process.env` in client code
+5. **Authentication & Authorization** — Firebase Auth with server-side `verifyIdToken()` on every endpoint
+6. **Deployment & Infrastructure** — Multi-stage Docker, Cloud Run with verification label
+7. **AI/Gemini Integration Standards** — Server-side only Gemini calls, system instruction persona
+
+📄 **Full directives document**: [`AI_STUDIO_CUSTOM_INSTRUCTIONS.md`](AI_STUDIO_CUSTOM_INSTRUCTIONS.md)
+
+---
+
+## 🧠 Phase 3: Original Feature Enhancement — AI-Powered Mood Analytics
+
+The **Mood Analytics Dashboard** is the unique feature enhancement that goes beyond the base spec. It leverages Gemini to automatically analyze the emotional tone of each journal entry.
+
+### How It Works
+
+1. **Automatic Mood Classification**: After each Gemini chat response, a background call to `POST /api/analyze-mood` sends the user's journal text to Gemini for emotional tone classification.
+2. **6 Mood Categories**: `joyful` 😊, `calm` 😌, `reflective` 🤔, `anxious` 😰, `sad` 😢, `energized` ⚡
+3. **Mood Badge**: A mood badge with emoji and label appears on the chat area header for the active entry.
+4. **Sidebar Mood Emojis**: Each entry in the sidebar shows its mood emoji next to the title.
+5. **Mood Filter Chips**: Filter entries by mood category directly from the sidebar.
+6. **Mood Insights Panel**: A visual insights panel at the bottom of the sidebar shows:
+   - A **mood timeline** with colored dots for recent entries
+   - A **mood distribution bar chart** showing percentages
+   - A **streak tracker** (e.g., "3 entries mostly calm")
+
+### Technical Implementation
+
+| Component | File | Description |
+|---|---|---|
+| Backend Endpoint | `server.ts` | `POST /api/analyze-mood` — Gemini classifies mood into structured JSON |
+| Mood Types | `src/types.ts` | `mood?` and `moodSummary?` fields on `JournalEntry` |
+| Mood Insights | `src/components/MoodInsights.tsx` | Timeline, distribution bars, streak tracker |
+| Chat Integration | `src/components/ChatArea.tsx` | Background mood analysis call + mood badge |
+| Sidebar | `src/components/Sidebar.tsx` | Mood emojis on entries + filter chips |
+| Dashboard | `src/components/Dashboard.tsx` | Mood filter state management |

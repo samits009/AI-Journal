@@ -249,6 +249,65 @@ app.post('/api/chat', verifyUser, async (req, res) => {
   }
 });
 
+// Mood Analysis API route — classifies the emotional tone of journal text
+app.post('/api/analyze-mood', verifyUser, async (req, res) => {
+  try {
+    const aiClient = getGenAI();
+    const { text } = req.body;
+
+    if (!text || typeof text !== 'string' || text.trim().length === 0) {
+      res.status(400).json({ error: 'Missing or invalid text' });
+      return;
+    }
+
+    const moodPrompt = `Analyze the emotional tone of the following journal entry text. Classify it into exactly ONE of these mood categories: "joyful", "calm", "reflective", "anxious", "sad", "energized".
+
+Also provide a brief 1-sentence summary of the emotional tone (max 15 words).
+
+Respond with ONLY valid JSON in this exact format, no markdown, no code fences:
+{"mood": "<category>", "summary": "<brief summary>"}
+
+Journal text:
+"""
+${text.trim().substring(0, 2000)}
+"""`;
+
+    const primaryModel = process.env.GEMINI_MODEL || 'gemini-3.6-flash';
+
+    const response = await aiClient.models.generateContent({
+      model: primaryModel,
+      contents: [{ role: 'user', parts: [{ text: moodPrompt }] }],
+      config: {
+        temperature: 0.3,
+      }
+    });
+
+    const responseText = response?.text || response?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+
+    // Parse JSON from Gemini response — strip any markdown fences if present
+    let cleaned = responseText.trim();
+    if (cleaned.startsWith('```')) {
+      cleaned = cleaned.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
+    }
+
+    try {
+      const parsed = JSON.parse(cleaned);
+      const validMoods = ['joyful', 'calm', 'reflective', 'anxious', 'sad', 'energized'];
+      const mood = validMoods.includes(parsed.mood) ? parsed.mood : 'reflective';
+      const summary = typeof parsed.summary === 'string' ? parsed.summary.substring(0, 100) : '';
+      res.json({ mood, summary });
+    } catch {
+      // If Gemini didn't return valid JSON, default to reflective
+      console.warn('Mood analysis returned non-JSON:', cleaned);
+      res.json({ mood: 'reflective', summary: 'Unable to determine mood' });
+    }
+  } catch (error: any) {
+    console.error('Mood Analysis Error:', error);
+    // Non-critical — return a default instead of erroring
+    res.json({ mood: 'reflective', summary: 'Analysis unavailable' });
+  }
+});
+
 // Error handler for API routes to always return JSON (e.g. for body-parser errors)
 app.use('/api', (err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
   console.error('API Error:', err);

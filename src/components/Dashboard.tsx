@@ -5,6 +5,7 @@ import { collection, query, orderBy, onSnapshot, addDoc, updateDoc, doc, serverT
 import { JournalEntry, ChatMessage } from '../types';
 import Sidebar from './Sidebar';
 import ChatArea from './ChatArea';
+import MoodInsights from './MoodInsights';
 import { Menu, PanelLeft } from 'lucide-react';
 
 export default function Dashboard() {
@@ -12,6 +13,7 @@ export default function Dashboard() {
   const [entries, setEntries] = useState<JournalEntry[]>([]);
   const [activeEntryId, setActiveEntryId] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(window.innerWidth >= 768);
+  const [moodFilter, setMoodFilter] = useState('all');
 
   useEffect(() => {
     if (!user) return;
@@ -27,6 +29,8 @@ export default function Dashboard() {
           title: data.title || 'Untitled',
           preview: data.preview || '',
           messages: data.messages || [],
+          mood: data.mood || undefined,
+          moodSummary: data.moodSummary || undefined,
           createdAt: data.createdAt?.toMillis() || Date.now(),
           updatedAt: data.updatedAt?.toMillis() || Date.now(),
         } as JournalEntry;
@@ -115,7 +119,11 @@ export default function Dashboard() {
             onCreateNew={handleCreateNew}
             user={user!}
             onLogout={logout}
+            moodFilter={moodFilter}
+            onMoodFilterChange={setMoodFilter}
           />
+          {/* Mood Insights Panel - collapsible at bottom of sidebar */}
+          <MoodInsights entries={entries} />
         </div>
       </div>
 

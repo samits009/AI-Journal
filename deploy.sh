@@ -102,6 +102,7 @@ gcloud run deploy "$SERVICE_NAME" \
   --region "$REGION" \
   --source . \
   --allow-unauthenticated \
+  --labels "dev-tutorial=cloud-run-ai-challenge" \
   --set-env-vars "NODE_ENV=production" \
   --set-secrets "GEMINI_API_KEY=gemini-api-key:latest,FIREBASE_API_KEY=firebase-api-key:latest"
 

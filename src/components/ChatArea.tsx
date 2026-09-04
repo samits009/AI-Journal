@@ -17,10 +17,26 @@ export default function ChatArea({ entry }: ChatAreaProps) {
   const [messages, setMessages] = useState<ChatMessage[]>(entry.messages);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  
-  // Keep local messages in sync with entry prop
+  const isSubmittingRef = useRef(false);
+  const isMountedRef = useRef(true);
+
   useEffect(() => {
-    setMessages(entry.messages);
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+  
+  // Keep local messages in sync with entry prop without rolling back newer optimistic messages
+  useEffect(() => {
+    if (entry.messages) {
+      setMessages(prev => {
+        if (entry.messages.length >= prev.length) {
+          return entry.messages;
+        }
+        return prev;
+      });
+    }
   }, [entry.id, entry.messages]);
 
   useEffect(() => {
@@ -34,7 +50,10 @@ export default function ChatArea({ entry }: ChatAreaProps) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmittingRef.current || isTyping) return;
     if (!input.trim() || !auth.currentUser) return;
+
+    isSubmittingRef.current = true;
     setSaveError(null);
 
     const userText = input.trim();
@@ -48,7 +67,7 @@ export default function ChatArea({ entry }: ChatAreaProps) {
     // Capture history BEFORE adding new user message (avoids duplicate in server call)
     const historyBeforeThisTurn = [...messages];
 
-    // Optimistically show user message and clear typebox immediately
+    // Optimistically show user message, clear input box, and show typing indicator
     const updatedMessages = [...messages, userMessage];
     setMessages(updatedMessages);
     setInput('');
@@ -69,7 +88,7 @@ export default function ChatArea({ entry }: ChatAreaProps) {
         updatedAt: serverTimestamp()
       }, { merge: true }).catch((err) => {
         console.warn('Background Firestore write error:', err);
-        if (err?.code === 'permission-denied') {
+        if (err?.code === 'permission-denied' && isMountedRef.current) {
           setSaveError('Firestore permission denied: Please ensure your Firestore Security Rules allow authenticated users.');
         }
       });
@@ -121,10 +140,19 @@ export default function ChatArea({ entry }: ChatAreaProps) {
       };
 
       const finalMessages = [...updatedMessages, aiMessage];
-      setMessages(finalMessages);
+      if (isMountedRef.current) {
+        setMessages(finalMessages);
+        // CRITICAL FIX: Turn off typing/buffering immediately as the response is displayed
+        setIsTyping(false);
+        isSubmittingRef.current = false;
+        // Refocus textarea so user can immediately type the next message
+        setTimeout(() => {
+          inputRef.current?.focus();
+        }, 50);
+      }
       
-      // Update Firestore with AI response
-      await setDoc(entryRef, {
+      // Update Firestore with AI response in the background (non-blocking)
+      setDoc(entryRef, {
         messages: finalMessages,
         updatedAt: serverTimestamp()
       }, { merge: true }).catch(err => {
@@ -133,13 +161,21 @@ export default function ChatArea({ entry }: ChatAreaProps) {
 
     } catch (error: any) {
       console.error('Chat error:', error);
-      const isAbort = error?.name === 'AbortError';
-      const msg = isAbort 
-        ? 'AI request timed out. Please check your network or try a shorter prompt.' 
-        : (error.message || 'Failed to get AI response. Please try again.');
-      setSaveError(msg);
+      if (isMountedRef.current) {
+        const isAbort = error?.name === 'AbortError';
+        const msg = isAbort 
+          ? 'AI request timed out. Please check your network or try a shorter prompt.' 
+          : (error.message || 'Failed to get AI response. Please try again.');
+        setSaveError(msg);
+      }
     } finally {
-      setIsTyping(false);
+      if (isMountedRef.current) {
+        isSubmittingRef.current = false;
+        setIsTyping(false);
+        setTimeout(() => {
+          inputRef.current?.focus();
+        }, 50);
+      }
     }
   };
 
@@ -224,7 +260,9 @@ export default function ChatArea({ entry }: ChatAreaProps) {
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
                   e.preventDefault();
-                  (e.currentTarget.form as HTMLFormElement)?.requestSubmit();
+                  if (!e.nativeEvent.isComposing && !isTyping && !isSubmittingRef.current && input.trim()) {
+                    (e.currentTarget.form as HTMLFormElement)?.requestSubmit();
+                  }
                 }
               }}
               placeholder="Deepen the reflection..."
@@ -234,7 +272,7 @@ export default function ChatArea({ entry }: ChatAreaProps) {
             <div className="absolute right-3 bottom-3 flex gap-2">
               <button
                 type="submit"
-                disabled={!input.trim() || isTyping}
+                disabled={!input.trim() || isTyping || isSubmittingRef.current}
                 className="px-4 py-2 bg-[#C5A059] text-black text-xs font-bold rounded-lg shadow-lg hover:bg-[#D5B069] disabled:opacity-50 disabled:hover:bg-[#C5A059] transition-colors"
               >
                 Reflect
